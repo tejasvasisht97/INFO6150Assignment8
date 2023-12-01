@@ -3,116 +3,110 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
-app.use(express.json());
-
-// Connect to MongoDB
-mongoose.connect('mongodb://localhost:27017/userDB', { useNewUrlParser: true, useUnifiedTopology: true });
-
-// Define the user schema
-const userSchema = new mongoose.Schema({
-  fullName: {
-    type: String,
-    required: true,
-    validate: {
-      validator: (value) => /^[A-Za-z\s]+$/.test(value),
-      message: 'Invalid full name format. Only letters and spaces allowed.'
-    }
-  },
+// MongoDB connection
+mongoose.connect("mongodb+srv://tejasvasisht07:mongodbpassword@cluster0.9ruridc.mongodb.net/?retryWrites=true&w=majority");
+const User = mongoose.model('User', {
+  fullName: String,
   email: {
     type: String,
-    required: true,
     unique: true,
+    required: true,
     validate: {
-      validator: (value) => /^\S+@\S+\.\S+$/.test(value),
-      message: 'Invalid email address format.'
-    }
+      validator: (email) => /\S+@\S+\.\S+/.test(email),
+      message: 'Invalid email format',
+    },
   },
   password: {
     type: String,
     required: true,
     validate: {
-      validator: (value) => /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[a-zA-Z]).{8,}$/.test(value),
-      message: 'Password must be at least 8 characters long and contain at least one lowercase letter, one uppercase letter, and one digit.'
-    }
-  }
+      validator: (password) => /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z]).{6,}$/.test(password),
+      message: 'Password must be at least 6 characters long and contain at least one digit, one lowercase, and one uppercase letter',
+    },
+  },
 });
 
-// Define a pre-save hook to hash the password before saving
-userSchema.pre('save', async function(next) {
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
+app.use(express.json());
 
-const User = mongoose.model('User', userSchema);
-
-// Create a new user
+// Create a user
 app.post('/user/create', async (req, res) => {
   try {
-    const newUser = new User(req.body);
+    const { fullName, email, password } = req.body;
+
+    // Hash the password before saving to the database
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = new User({
+      fullName,
+      email,
+      password: hashedPassword,
+    });
+
     await newUser.save();
-    res.send('User created successfully!');
+
+    res.status(201).json({ message: 'User created successfully' });
   } catch (error) {
-    res.status(400).send(error.message);
+    res.status(400).json({ error: error.message });
   }
 });
 
-// Edit user details
+// Update user details
 app.put('/user/edit', async (req, res) => {
   try {
     const { fullName, password } = req.body;
-    const user = await User.findOne({ email: req.body.email });
 
-    if (!user) {
-      return res.status(404).send('User not found');
+    // Validate full name and password
+    if (!fullName || !password) {
+      throw new Error('Full name and password are required');
     }
 
-    if (fullName) {
-      user.fullName = fullName;
+  
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const updatedUser = await User.findOneAndUpdate(
+      { email: req.body.email },
+      { fullName, password: hashedPassword },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      throw new Error('User not found');
     }
 
-    if (password) {
-      user.password = password;
-    }
-
-    await user.save();
-    res.send('User details updated successfully!');
+    res.json({ message: 'User details updated successfully' });
   } catch (error) {
-    res.status(400).send(error.message);
+    res.status(400).json({ error: error.message });
   }
 });
 
-// Delete user by email
+// Delete user
 app.delete('/user/delete', async (req, res) => {
   try {
-    const user = await User.findOneAndDelete({ email: req.body.email });
+    const deletedUser = await User.findOneAndDelete({ email: req.body.email });
 
-    if (!user) {
-      return res.status(404).send('User not found');
+    if (!deletedUser) {
+      throw new Error('User not found');
     }
 
-    res.send('User deleted successfully!');
+    res.json({ message: 'User deleted successfully' });
   } catch (error) {
-    res.status(400).send(error.message);
+    res.status(400).json({ error: error.message });
   }
 });
 
-// Get all user details
+// Get all users
 app.get('/user/getAll', async (req, res) => {
   try {
-    const users = await User.find({}, 'fullName email password');
+    const users = await User.find({}, { fullName: 1, email: 1, password: 1 });
+
     res.json(users);
   } catch (error) {
-    res.status(500).send('Internal server error');
+    res.status(400).json({ error: error.message });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
